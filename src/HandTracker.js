@@ -177,9 +177,9 @@ export class HandTracker {
         let centerX = (landmarks[0].x + landmarks[5].x + landmarks[17].x) / 3;
         let centerY = (landmarks[0].y + landmarks[5].y + landmarks[17].y) / 3;
 
-        // Smoothing
+        // Smoothing - IMPROVED: higher alpha for smoother, more stable tracking
         if (this.smoothedPosition) {
-            const alpha = 0.25;
+            const alpha = 0.35;  // Was 0.25 - higher = smoother but slightly slower response
             centerX = this.smoothedPosition.x + (centerX - this.smoothedPosition.x) * alpha;
             centerY = this.smoothedPosition.y + (centerY - this.smoothedPosition.y) * alpha;
         }
@@ -198,9 +198,9 @@ export class HandTracker {
         // Gest aniqlash
         const gestureType = this.detectGestureType(landmarks);
 
-        // Gest barqarorligi uchun tarix
+        // Gest barqarorligi uchun tarix - IMPROVED: longer history for stability
         this.gestureHistory.push(gestureType);
-        if (this.gestureHistory.length > 5) this.gestureHistory.shift();
+        if (this.gestureHistory.length > 8) this.gestureHistory.shift();  // Was 5
 
         // Eng ko'p takrorlangan gest
         const stableGesture = this.getMostFrequent(this.gestureHistory);

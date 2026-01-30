@@ -226,9 +226,10 @@ export class ParticleSystem {
 
     update(interactionData) {
         // Performance: use delta time for consistent animation
-        this.time += 0.016;
-        this.pulsePhase += 0.05;
-        this.rainbowOffset += 0.002;
+        // SLOWER: reduced time increments for smoother, slower animations
+        this.time += 0.008;  // Was 0.016 - now 2x slower
+        this.pulsePhase += 0.02;  // Was 0.05 - now 2.5x slower
+        this.rainbowOffset += 0.001;  // Was 0.002 - now 2x slower
 
         // Cache array references
         const positions = this.geometry.attributes.position.array;
@@ -282,8 +283,9 @@ export class ParticleSystem {
             this.lastTargetPos = { x: targetX, y: targetY, z: targetZ };
 
             if (interactionData.velocity) {
-                handVx = -interactionData.velocity.x * 50;
-                handVy = -interactionData.velocity.y * 40;
+                // SLOWER: reduced velocity multiplier for smoother movement
+                handVx = -interactionData.velocity.x * 25;  // Was 50
+                handVy = -interactionData.velocity.y * 20;  // Was 40
             }
 
             // Ikkinchi qo'l
@@ -301,36 +303,36 @@ export class ParticleSystem {
             this.guideInfo2.visible = false;
         }
 
-        // Portlash effekti
+        // Portlash effekti - SLOWER
         if (this.isExploding) {
-            this.explosionPhase += 0.02;
+            this.explosionPhase += 0.012;  // Was 0.02
             if (this.explosionPhase > 1) {
                 this.isExploding = false;
                 this.explosionPhase = 0;
             }
         }
 
-        // Dinamik qaytish tezligi
+        // Dinamik qaytish tezligi - SLOWER for smoother transitions
         const speed = Math.sqrt(handVx * handVx + handVy * handVy);
-        let dynamicReturn = isHandPresent ? 0.04 : 0.008;
+        let dynamicReturn = isHandPresent ? 0.025 : 0.005;  // Was 0.04 : 0.008
         if (isHandPresent && speed > 2.0) {
-            dynamicReturn = 0.008;
+            dynamicReturn = 0.005;  // Was 0.008
         }
 
         // Fist gestida kuchli tortilish
         if (currentGesture === 'fist') {
-            dynamicReturn = 0.12;
+            dynamicReturn = 0.08;  // Was 0.12
         }
 
-        // Pre-compute friction and rainbow mode
-        const friction = currentGesture === 'fist' ? 0.92 : 0.88;
+        // Pre-compute friction and rainbow mode - HIGHER friction = slower
+        const friction = currentGesture === 'fist' ? 0.95 : 0.92;  // Was 0.92 : 0.88
         const isRainbowMode = currentGesture === 'rock' || currentGesture === 'peace';
 
-        // Pre-compute values outside loop
-        const sinTable = Math.sin(this.time * 0.5);
-        const cosTable = Math.cos(this.time * 0.3);
-        const sinTable2 = Math.sin(this.time * 0.2);
-        const timeWave = this.time * 5;
+        // Pre-compute values outside loop - SLOWER animation timing
+        const sinTable = Math.sin(this.time * 0.25);  // Was 0.5
+        const cosTable = Math.cos(this.time * 0.15);  // Was 0.3
+        const sinTable2 = Math.sin(this.time * 0.1);  // Was 0.2
+        const timeWave = this.time * 2.5;  // Was 5
         const invCount = this.invCount;
 
         for (let i = 0; i < count; i++) {
@@ -450,18 +452,18 @@ export class ParticleSystem {
                         break;
 
                     case 'peace':
-                        // Tinch to'lqin - yumshoq tarqalish
+                        // Tinch to'lqin - yumshoq tarqalish (SLOWER)
                         if (dist < 10) {
-                            const wave = Math.sin(dist * 2 - this.time * 5) * 0.1;
+                            const wave = Math.sin(dist * 1.5 - this.time * 2) * 0.08;  // Was dist*2-time*5, 0.1
                             fx += dx * wave;
                             fy += dy * wave;
                         }
                         break;
 
                     case 'rock':
-                        // Spiral harakat
+                        // Spiral harakat - SLOWER
                         if (dist < 12) {
-                            const spiralForce = 0.1;
+                            const spiralForce = 0.06;  // Was 0.1
                             fx += -dy * spiralForce;
                             fy += dx * spiralForce;
                         }
