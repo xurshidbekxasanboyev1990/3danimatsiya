@@ -4,9 +4,9 @@ import * as THREE from 'three';
  * ShapeGenerator - Turli xil 3D shakllar va effektlar yaratish
  */
 export class ShapeGenerator {
-    
+
     // ============== ASOSIY SHAKLLAR ==============
-    
+
     static sphere(radius = 5) {
         const r = radius * Math.cbrt(Math.random());
         const theta = Math.random() * 2 * Math.PI;
@@ -34,7 +34,7 @@ export class ShapeGenerator {
     static heart(scale = 0.4) {
         const t = Math.random() * 2 * Math.PI;
         const x = scale * 16 * Math.pow(Math.sin(t), 3);
-        const y = scale * (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+        const y = scale * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
         const z = (Math.random() - 0.5) * 6;
         return { x, y, z };
     }
@@ -44,7 +44,7 @@ export class ShapeGenerator {
         const t = Math.random() * 2 * Math.PI;
         const side = Math.random() > 0.5 ? 1 : -1;
         const x = scale * 16 * Math.pow(Math.sin(t), 3) + side * 8;
-        const y = scale * (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+        const y = scale * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
         const z = (Math.random() - 0.5) * 4;
         return { x, y, z };
     }
@@ -57,17 +57,17 @@ export class ShapeGenerator {
         const isOuter = pointIndex % 2 === 0;
         const radius = isOuter ? outerRadius : innerRadius;
         const baseAngle = (pointIndex / (points * 2)) * 2 * Math.PI;
-        
+
         // Interpolate along star edge
         const nextIndex = (pointIndex + 1) % (points * 2);
         const nextOuter = nextIndex % 2 === 0;
         const nextRadius = nextOuter ? outerRadius : innerRadius;
         const nextAngle = (nextIndex / (points * 2)) * 2 * Math.PI;
-        
+
         const t = Math.random();
         const r = radius + t * (nextRadius - radius);
         const a = baseAngle + t * (nextAngle - baseAngle);
-        
+
         return {
             x: r * Math.cos(a),
             y: r * Math.sin(a),
@@ -78,15 +78,15 @@ export class ShapeGenerator {
     static galaxy(arms = 4, spread = 12) {
         const arm = Math.floor(Math.random() * arms);
         const armAngle = (arm / arms) * 2 * Math.PI;
-        
+
         const distance = Math.random() * spread;
         const spiralFactor = distance * 0.5;
         const angle = armAngle + spiralFactor + (Math.random() - 0.5) * 0.5;
-        
+
         const x = distance * Math.cos(angle);
         const y = distance * Math.sin(angle);
         const z = (Math.random() - 0.5) * (1 + distance * 0.1);
-        
+
         return { x, y, z };
     }
 
@@ -114,14 +114,14 @@ export class ShapeGenerator {
         const theta = (Math.random() - 0.5) * Math.PI;
         const phi = Math.random() * 2 * Math.PI;
         const r = 5;
-        
+
         let x = r * Math.cos(theta) * Math.cos(phi);
         const y = r * Math.sin(theta);
         const z = r * Math.cos(theta) * Math.sin(phi);
-        
+
         // Faqat bir tomonini olish
         if (x < 2) x = x + 4;
-        
+
         return { x: x - 5, y, z };
     }
 
@@ -162,11 +162,11 @@ export class ShapeGenerator {
     static butterfly(wingSpan = 10) {
         const t = Math.random() * 2 * Math.PI;
         const side = Math.random() > 0.5 ? 1 : -1;
-        
+
         // Butterfly curve: r = e^sin(t) - 2cos(4t) + sin^5((2t-π)/24)
-        const r = Math.exp(Math.sin(t)) - 2 * Math.cos(4 * t) + Math.pow(Math.sin((2*t - Math.PI)/24), 5);
+        const r = Math.exp(Math.sin(t)) - 2 * Math.cos(4 * t) + Math.pow(Math.sin((2 * t - Math.PI) / 24), 5);
         const scale = wingSpan / 5;
-        
+
         return {
             x: scale * r * Math.cos(t) * side,
             y: scale * r * Math.sin(t),
@@ -181,7 +181,7 @@ export class ShapeGenerator {
         const angle = Math.random() * 2 * Math.PI;
         const phi = Math.acos(2 * Math.random() - 1);
         const r = radius * Math.random();
-        
+
         return {
             x: centerX + r * Math.sin(phi) * Math.cos(angle),
             y: centerY + r * Math.sin(phi) * Math.sin(angle),
@@ -194,7 +194,7 @@ export class ShapeGenerator {
         const angle = t * turns * 2 * Math.PI;
         const y = (t - 0.5) * height;
         const r = radius * (1 - t * 0.3); // Tepaga qarab torayadi
-        
+
         return {
             x: r * Math.cos(angle),
             y: y,
@@ -207,7 +207,7 @@ export class ShapeGenerator {
         const angle = t * turns * 2 * Math.PI;
         const y = (t - 0.5) * height;
         const strand = Math.random() > 0.5 ? 0 : Math.PI;
-        
+
         return {
             x: radius * Math.cos(angle + strand),
             y: y,
@@ -219,7 +219,7 @@ export class ShapeGenerator {
         const x = (Math.random() - 0.5) * width;
         const z = (Math.random() - 0.5) * 10;
         const y = amplitude * Math.sin(x / wavelength * Math.PI);
-        
+
         return { x, y, z };
     }
 
@@ -228,7 +228,7 @@ export class ShapeGenerator {
         const y = (t - 0.5) * height;
         const radius = baseRadius * (1 - t * 0.8);
         const angle = t * 6 * Math.PI + Math.random() * 0.5;
-        
+
         return {
             x: radius * Math.cos(angle),
             y: y,
@@ -293,7 +293,7 @@ export class ShapeGenerator {
 
     static smiley(radius = 8) {
         const r = Math.random();
-        
+
         if (r < 0.7) {
             // Yuz doirasi
             const angle = Math.random() * 2 * Math.PI;
@@ -342,7 +342,7 @@ export class ShapeGenerator {
     static peace(radius = 8) {
         const r = Math.random();
         const angle = Math.random() * 2 * Math.PI;
-        
+
         if (r < 0.6) {
             // Tashqi doira
             return {
@@ -375,7 +375,7 @@ export class ShapeGenerator {
         const angle = Math.random() * 4 * Math.PI;
         const t = Math.random();
         const r = radius * t;
-        
+
         return {
             x: r * Math.cos(angle),
             y: r * Math.sin(angle),
@@ -388,7 +388,7 @@ export class ShapeGenerator {
         const angle = Math.random() * 2 * Math.PI;
         const phi = Math.acos(2 * Math.random() - 1);
         const r = 15 * phase * Math.random();
-        
+
         return {
             x: r * Math.sin(phi) * Math.cos(angle),
             y: r * Math.sin(phi) * Math.sin(angle),
@@ -400,8 +400,8 @@ export class ShapeGenerator {
         const face = Math.floor(Math.random() * 6);
         const half = size / 2;
         let x, y, z;
-        
-        switch(face) {
+
+        switch (face) {
             case 0: x = half; y = (Math.random() - 0.5) * size; z = (Math.random() - 0.5) * size; break;
             case 1: x = -half; y = (Math.random() - 0.5) * size; z = (Math.random() - 0.5) * size; break;
             case 2: y = half; x = (Math.random() - 0.5) * size; z = (Math.random() - 0.5) * size; break;
@@ -409,14 +409,14 @@ export class ShapeGenerator {
             case 4: z = half; x = (Math.random() - 0.5) * size; y = (Math.random() - 0.5) * size; break;
             case 5: z = -half; x = (Math.random() - 0.5) * size; y = (Math.random() - 0.5) * size; break;
         }
-        
+
         return { x, y, z };
     }
 
     static pyramid(size = 10) {
         const face = Math.floor(Math.random() * 5);
         const half = size / 2;
-        
+
         if (face === 0) {
             // Base
             return {
@@ -429,7 +429,7 @@ export class ShapeGenerator {
             const t = Math.random();
             const s = Math.random();
             const angle = ((face - 1) / 4) * 2 * Math.PI;
-            
+
             return {
                 x: half * (1 - t) * Math.cos(angle) * s,
                 y: -half + t * size,

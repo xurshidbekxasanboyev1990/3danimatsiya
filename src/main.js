@@ -1,16 +1,20 @@
 import * as THREE from 'three';
 import { HandTracker } from './HandTracker.js';
 import { ParticleSystem } from './ParticleSystem.js';
-import { GestureShapeMap, ColorPalettes } from './ShapeGenerator.js';
 
 async function main() {
-    // 1. Setup Three.js
+    // 1. Setup Three.js with performance optimizations
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.z = 20;
 
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    const renderer = new THREE.WebGLRenderer({
+        alpha: true,
+        antialias: false, // Performance: disable for better FPS
+        powerPreference: 'high-performance'
+    });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap pixel ratio for performance
     renderer.setClearColor(0x000000, 1);
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
@@ -24,6 +28,16 @@ async function main() {
     // 2. Setup Components
     const particleSystem = new ParticleSystem(scene);
     const handTracker = new HandTracker();
+
+    // FPS Counter
+    const fpsDisplay = document.createElement('div');
+    fpsDisplay.id = 'fps-display';
+    fpsDisplay.innerHTML = 'FPS: --';
+    document.body.appendChild(fpsDisplay);
+
+    let frameCount = 0;
+    let lastFpsUpdate = performance.now();
+    let currentFps = 60;
 
     // UI elementlarini yaratish
     const gestureDisplay = document.createElement('div');
@@ -39,6 +53,22 @@ async function main() {
     // Stil qo'shish
     const style = document.createElement('style');
     style.textContent = `
+        #fps-display {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #0f0;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 1000;
+            border: 1px solid rgba(0, 255, 0, 0.3);
+        }
+        #fps-display.warning { color: #ff0; border-color: rgba(255, 255, 0, 0.3); }
+        #fps-display.critical { color: #f00; border-color: rgba(255, 0, 0, 0.3); }
         #gesture-display {
             position: fixed;
             top: 20px;
@@ -148,9 +178,9 @@ async function main() {
                 </div>
             </div>
         `;
-        
+
         // Rang effekti
-        switch(gesture) {
+        switch (gesture) {
             case 'pinch': gestureDisplay.style.borderColor = 'rgba(255, 0, 0, 0.5)'; break;
             case 'fist': gestureDisplay.style.borderColor = 'rgba(255, 85, 0, 0.5)'; break;
             case 'peace': gestureDisplay.style.borderColor = 'rgba(0, 255, 0, 0.5)'; break;
@@ -164,6 +194,18 @@ async function main() {
     function animate(time) {
         requestAnimationFrame(animate);
 
+        // FPS calculation
+        frameCount++;
+        const now = performance.now();
+        if (now - lastFpsUpdate >= 500) { // Update every 500ms
+            currentFps = Math.round(frameCount * 1000 / (now - lastFpsUpdate));
+            frameCount = 0;
+            lastFpsUpdate = now;
+
+            fpsDisplay.textContent = `FPS: ${currentFps}`;
+            fpsDisplay.className = currentFps >= 50 ? '' : (currentFps >= 30 ? 'warning' : 'critical');
+        }
+
         const delta = time - lastTime;
         lastTime = time;
 
@@ -171,14 +213,14 @@ async function main() {
         handTracker.detect();
         const gesture = handTracker.getGesture();
         const currentGesture = gesture.type;
-        const now = Date.now();
+        const nowMs = Date.now();
 
         // Gesture o'zgarganini tekshirish
-        if (currentGesture !== previousGesture && now - lastShapeChange > shapeChangeCooldown) {
+        if (currentGesture !== previousGesture && nowMs - lastShapeChange > shapeChangeCooldown) {
             updateGestureUI(currentGesture);
-            
+
             // Gestga qarab shakl o'zgartirish
-            switch(currentGesture) {
+            switch (currentGesture) {
                 case 'pinch':
                     // Matn shakllari o'rtasida aylanish
                     const textShape = textShapes[textShapeIndex];
@@ -187,47 +229,47 @@ async function main() {
                     updateGestureUI('pinch');
                     textShapeIndex = (textShapeIndex + 1) % textShapes.length;
                     break;
-                    
+
                 case 'fist':
                     particleSystem.setShape('firework');
                     particleSystem.triggerExplosion();
                     break;
-                    
+
                 case 'peace':
                     particleSystem.setShape('peace');
                     break;
-                    
+
                 case 'thumbs_up':
                     particleSystem.setShape('heart');
                     break;
-                    
+
                 case 'point':
                     particleSystem.setShape('star');
                     break;
-                    
+
                 case 'rock':
                     particleSystem.setShape('galaxy');
                     break;
-                    
+
                 case 'three':
                     particleSystem.setShape('spiral');
                     break;
-                    
+
                 case 'four':
                     particleSystem.setShape('butterfly');
                     break;
-                    
+
                 case 'open':
                     particleSystem.setShape('trail');
                     break;
-                    
+
                 case 'none':
                     particleSystem.setShape('trail');
                     break;
             }
-            
+
             previousGesture = currentGesture;
-            lastShapeChange = now;
+            lastShapeChange = nowMs;
         }
 
         // Update particles
@@ -235,7 +277,7 @@ async function main() {
 
         renderer.render(scene, camera);
     }
-    
+
     animate(0);
 }
 

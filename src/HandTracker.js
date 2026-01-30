@@ -135,7 +135,7 @@ export class HandTracker {
         const middleExt = this.isFingerExtended(landmarks, 12, 10);
         const ringExt = this.isFingerExtended(landmarks, 16, 14);
         const pinkyExt = this.isFingerExtended(landmarks, 20, 18);
-        
+
         if (indexExt && middleExt && !ringExt && !pinkyExt) {
             return 'peace';
         }

@@ -15,7 +15,7 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             overflow: hidden;
             background: linear-gradient(135deg, #0a0a0a 0%, #1a0a0a 50%, #0a0a1a 100%);
@@ -45,7 +45,7 @@
             box-shadow: 0 0 30px rgba(255, 100, 100, 0.3);
             transition: all 0.3s ease;
         }
-        
+
         #video-input:hover {
             opacity: 1;
             transform: scaleX(-1) scale(1.05);
@@ -63,10 +63,19 @@
             text-shadow: 0 0 20px rgba(255, 100, 100, 0.5);
             animation: pulse 1.5s ease-in-out infinite;
         }
-        
+
         @keyframes pulse {
-            0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
-            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+
+            0%,
+            100% {
+                opacity: 0.5;
+                transform: translate(-50%, -50%) scale(1);
+            }
+
+            50% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1.05);
+            }
         }
 
         #instructions {
@@ -83,7 +92,7 @@
             max-width: 320px;
             font-size: 13px;
         }
-        
+
         #instructions h3 {
             margin-bottom: 12px;
             font-size: 16px;
@@ -92,13 +101,13 @@
             align-items: center;
             gap: 8px;
         }
-        
+
         .gesture-list {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 8px;
         }
-        
+
         .gesture-item {
             display: flex;
             align-items: center;
@@ -108,21 +117,21 @@
             border-radius: 8px;
             transition: all 0.2s ease;
         }
-        
+
         .gesture-item:hover {
             background: rgba(255, 255, 255, 0.1);
             transform: translateX(3px);
         }
-        
+
         .gesture-item .icon {
             font-size: 18px;
         }
-        
+
         .gesture-item .text {
             font-size: 11px;
             opacity: 0.9;
         }
-        
+
         /* Watermark */
         .watermark {
             position: absolute;
@@ -141,7 +150,7 @@
     <div id="loading">✨ Model yuklanmoqda...</div>
     <div id="canvas-container"></div>
     <video id="video-input" autoplay playsinline></video>
-    
+
     <div id="instructions">
         <h3>🎮 Qo'l ishoralari</h3>
         <div class="gesture-list">
@@ -155,9 +164,9 @@
             <div class="gesture-item"><span class="icon">🖖</span><span class="text">To'rtta - Kapalak</span></div>
         </div>
     </div>
-    
+
     <div class="watermark">KUAF × SysMasters × Xurshidbek</div>
-    
+
     <script type="module" src="/src/main.js"></script>
 </body>
 
