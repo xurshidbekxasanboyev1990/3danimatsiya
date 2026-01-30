@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Particle System</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #video-input {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 160px;
+            height: 120px;
+            z-index: 2;
+            opacity: 0.5;
+            transform: scaleX(-1);
+            border: 1px solid #333;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: sans-serif;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            z-index: 10;
+            font-family: sans-serif;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading">Loading model...</div>
+    <div id="canvas-container"></div>
+    <video id="video-input" autoplay playsinline></video>
+    <div class="controls">
+        <p>Instructions:</p>
+        <ul>
+            <li>Show hand to control particles.</li>
+            <li>Pinch (Index + Thumb) to attract particles.</li>
+            <li>Open hand to disperse.</li>
+            <li>Move hand to move center of attraction.</li>
+            <li>Templates change periodically or based on gestures.</li>
+        </ul>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
