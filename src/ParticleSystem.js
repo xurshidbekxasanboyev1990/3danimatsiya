@@ -247,9 +247,9 @@ export class ParticleSystem {
                 const target = this.customTextPoints[i % this.customTextPoints.length];
                 this.targetPositions[i * 3] = target.x;
                 this.targetPositions[i * 3 + 1] = target.y;
-                this.targetPositions[i * 3 + 2] = target.z + (Math.random() - 0.5) * 1.0;
+                this.targetPositions[i * 3 + 2] = target.z + (Math.random() - 0.5) * 0.3;
 
-                this.particleDelay[i] = Math.random() * 0.6;
+                this.particleDelay[i] = Math.random() * 0.4;
 
                 const colorIdx = Math.floor(Math.random() * palette.length);
                 const nextIdx = (colorIdx + 1) % palette.length;
@@ -355,9 +355,13 @@ export class ParticleSystem {
         let returnForce = isHandPresent ? 0.03 : 0.006;
         if (isHandPresent && speed > 1.5) returnForce = 0.008;
         if (currentGesture === 'fist') returnForce = 0.1;
+        // Custom text uchun kuchli return force - matn aniq ko'rinishi kerak
+        if (this.currentShape === '_customText') returnForce = 0.06;
 
         // Friction - gesture based
-        const friction = currentGesture === 'fist' ? 0.94 : 0.91;
+        let friction = currentGesture === 'fist' ? 0.94 : 0.91;
+        // Custom text uchun yuqori friction - zarrachalar tez to'xtaydi
+        if (this.currentShape === '_customText') friction = 0.85;
         const isRainbowMode = currentGesture === 'rock' || currentGesture === 'peace';
 
         // Pre-computed wave values
@@ -388,14 +392,21 @@ export class ParticleSystem {
             let targetBaseY = targetY;
             let targetBaseZ = targetZ;
 
-            // Breathing animation - shape-ga hayot berish
-            if (this.currentShape !== 'trail' && isHandPresent) {
+            // Custom text uchun - ekran markazida ko'rsatish, qo'l pozitsiyasiga bog'lamaslik
+            if (this.currentShape === '_customText') {
+                targetBaseX = 0;
+                targetBaseY = 0;
+                targetBaseZ = 0;
+            }
+
+            // Breathing animation - shape-ga hayot berish (custom text uchun emas)
+            if (this.currentShape !== 'trail' && this.currentShape !== '_customText' && isHandPresent) {
                 tx *= (1 + this.breathe);
                 ty *= (1 + this.breathe);
             }
 
-            // 3D rotation based on gesture (non-open, non-none)
-            if (isHandPresent && currentGesture !== 'open' && currentGesture !== 'none') {
+            // 3D rotation based on gesture - custom text uchun O'CHIRISH (matn tekis bo'lishi kerak)
+            if (isHandPresent && currentGesture !== 'open' && currentGesture !== 'none' && this.currentShape !== '_customText') {
                 const rotY = targetX * 0.08;
                 const rotX = -targetY * 0.08;
 
@@ -487,7 +498,8 @@ export class ParticleSystem {
                         break;
                     }
                     case 'peace': {
-                        if (dist < 10) {
+                        // Custom text ko'rsatilayotganda wave effektini O'CHIRISH
+                        if (this.currentShape !== '_customText' && dist < 10) {
                             const wave = Math.sin(dist * 1.2 - this.time * 2.5) * 0.06;
                             fx += dx / dist * wave;
                             fy += dy / dist * wave;
