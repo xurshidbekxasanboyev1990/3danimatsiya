@@ -254,8 +254,8 @@ export class ShapeGenerator {
     static text(text, fontSize = 80) {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        const width = 500;
-        const height = 150;
+        const width = 600;
+        const height = 180;
         canvas.width = width;
         canvas.height = height;
 
@@ -263,24 +263,38 @@ export class ShapeGenerator {
         ctx.fillRect(0, 0, width, height);
 
         ctx.fillStyle = 'white';
-        const size = text.length > 8 ? 50 : (text.length > 5 ? 65 : fontSize);
-        ctx.font = `bold ${size}px Arial`;
+        // Matn uzunligiga qarab shrift hajmi
+        let size = fontSize;
+        if (text.length > 12) size = 40;
+        else if (text.length > 8) size = 50;
+        else if (text.length > 5) size = 65;
+
+        ctx.font = `bold ${size}px Arial, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
+
+        // Matnni yozish
         ctx.fillText(text, width / 2, height / 2);
+
+        // Outline qo'shish (qalinroq qilish)
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.strokeText(text, width / 2, height / 2);
 
         const imageData = ctx.getImageData(0, 0, width, height);
         const data = imageData.data;
         const points = [];
 
+        // Biroz zich scan - ko'proq nuqtalar
         const step = 2;
+        const scale = 0.11;
         for (let y = 0; y < height; y += step) {
             for (let x = 0; x < width; x += step) {
                 const i = (y * width + x) * 4;
-                if (data[i] > 128) {
+                if (data[i] > 100) {
                     points.push({
-                        x: (x - width / 2) * 0.12,
-                        y: -(y - height / 2) * 0.12,
+                        x: (x - width / 2) * scale,
+                        y: -(y - height / 2) * scale,
                         z: 0
                     });
                 }

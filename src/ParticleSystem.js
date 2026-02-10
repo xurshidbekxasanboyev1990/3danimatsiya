@@ -2,28 +2,31 @@ import * as THREE from 'three';
 import { ColorPalettes, ShapeColorMap, ShapeGenerator } from './ShapeGenerator.js';
 
 export class ParticleSystem {
-    constructor(scene, count = 18000) { // Optimized: 18k particles for smooth 60fps
+    constructor(scene, count = 20000) {
         this.scene = scene;
         this.count = count;
         this.particles = null;
         this.geometry = null;
         this.material = null;
 
-        // Data storage - Float32Array is optimal for WebGL
+        // Float32 arrays - GPU optimal
         this.positions = new Float32Array(count * 3);
         this.colors = new Float32Array(count * 3);
+        this.alphas = new Float32Array(count);
         this.targetPositions = new Float32Array(count * 3);
         this.velocities = new Float32Array(count * 3);
-        this.sizes = new Float32Array(count);
+        this.particleLife = new Float32Array(count); // Har bir zarracha "hayoti"
+        this.particleDelay = new Float32Array(count); // Shakl o'zgarishida delay
 
-        // Pre-computed constants for performance
+        // Pre-computed
         this.PI2 = Math.PI * 2;
         this.invCount = 1 / count;
 
         // State
         this.currentShape = 'trail';
-        this.currentPalette = 'fire';
+        this.currentPalette = ColorPalettes.fire;
         this.lastTargetPos = { x: 0, y: 0, z: 0 };
+        this.transitionProgress = 1.0; // 0 = transitioning, 1 = complete
 
         // Effects
         this.time = 0;
@@ -31,15 +34,17 @@ export class ParticleSystem {
         this.isExploding = false;
         this.pulsePhase = 0;
         this.rainbowOffset = 0;
+        this.breathe = 0; // Breathing animation for shapes
+        this.sparkleTime = 0;
 
         // Text shapes cache
-        this.textShapes = {
-            'Xurshidbek': null,
-            'SysMasters': null,
-            'KUAF': null
-        };
+        this.textShapes = {};
+        this.defaultTexts = ['Xurshidbek', 'SysMasters', 'KUAF'];
         this.currentTextIndex = 0;
-        this.textList = ['Xurshidbek', 'SysMasters', 'KUAF'];
+
+        // Cached custom text
+        this.customText = '';
+        this.customTextPoints = null;
 
         this.init();
         this.setShape('trail');
@@ -47,24 +52,26 @@ export class ParticleSystem {
 
     createTexture() {
         const canvas = document.createElement('canvas');
-        // Optimized: 32x32 texture is enough for particles
-        canvas.width = 32;
-        canvas.height = 32;
-        const context = canvas.getContext('2d');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
 
-        // Optimized gradient with fewer stops
-        const gradient = context.createRadialGradient(16, 16, 0, 16, 16, 16);
-        gradient.addColorStop(0, 'rgba(255,255,255,1)');
+        // Yaxshi glow effekti
+        const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        gradient.addColorStop(0.0, 'rgba(255,255,255,1.0)');
+        gradient.addColorStop(0.1, 'rgba(255,255,255,0.95)');
         gradient.addColorStop(0.2, 'rgba(255,255,255,0.7)');
-        gradient.addColorStop(0.5, 'rgba(255,255,255,0.2)');
-        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        gradient.addColorStop(0.35, 'rgba(255,255,255,0.4)');
+        gradient.addColorStop(0.55, 'rgba(255,255,255,0.15)');
+        gradient.addColorStop(0.8, 'rgba(255,255,255,0.03)');
+        gradient.addColorStop(1.0, 'rgba(0,0,0,0)');
 
-        context.fillStyle = gradient;
-        context.fillRect(0, 0, 32, 32);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 64, 64);
 
         const texture = new THREE.Texture(canvas);
         texture.needsUpdate = true;
-        texture.generateMipmaps = false; // Performance: disable mipmaps
+        texture.generateMipmaps = false;
         texture.minFilter = THREE.LinearFilter;
         return texture;
     }
@@ -77,12 +84,12 @@ export class ParticleSystem {
         const sprite = this.createTexture();
 
         this.material = new THREE.PointsMaterial({
-            size: 0.22,
+            size: 0.25,
             vertexColors: true,
             map: sprite,
             alphaTest: 0.01,
             transparent: true,
-            opacity: 0.85,
+            opacity: 0.9,
             sizeAttenuation: true,
             blending: THREE.AdditiveBlending,
             depthWrite: false
@@ -91,37 +98,57 @@ export class ParticleSystem {
         this.particles = new THREE.Points(this.geometry, this.material);
         this.scene.add(this.particles);
 
-        // Guide mesh (qo'l ko'rsatkichi)
-        const guideGeo = new THREE.SphereGeometry(0.3, 16, 16);
+        // Guide mesh - glowing sphere
+        const guideGeo = new THREE.SphereGeometry(0.25, 32, 32);
         const guideMat = new THREE.MeshBasicMaterial({
             color: 0xffffff,
             transparent: true,
-            opacity: 0.6
+            opacity: 0.5
         });
         this.guideInfo = new THREE.Mesh(guideGeo, guideMat);
         this.scene.add(this.guideInfo);
         this.guideInfo.visible = false;
 
-        // Ikkinchi qo'l uchun guide
-        this.guideInfo2 = new THREE.Mesh(guideGeo.clone(), guideMat.clone());
-        this.scene.add(this.guideInfo2);
-        this.guideInfo2.visible = false;
+        // Guide ring (halo effekt)
+        const ringGeo = new THREE.RingGeometry(0.4, 0.6, 32);
+        const ringMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.DoubleSide
+        });
+        this.guideRing = new THREE.Mesh(ringGeo, ringMat);
+        this.scene.add(this.guideRing);
+        this.guideRing.visible = false;
 
-        // Init velocities
-        for (let i = 0; i < this.count * 3; i++) {
-            this.velocities[i] = 0;
+        // Init particles with random delay
+        for (let i = 0; i < this.count; i++) {
+            this.velocities[i * 3] = 0;
+            this.velocities[i * 3 + 1] = 0;
+            this.velocities[i * 3 + 2] = 0;
+            this.particleLife[i] = Math.random();
+            this.particleDelay[i] = Math.random() * 0.5; // 0-0.5 soniya delay
         }
 
         // Precompute text shapes
-        for (const text of this.textList) {
+        for (const text of this.defaultTexts) {
             this.textShapes[text] = ShapeGenerator.text(text);
         }
     }
 
-    // Keyingi matn shaklini olish
+    // Custom matn uchun nuqtalarni yaratish
+    setCustomText(text) {
+        if (!text || text.trim() === '') return;
+        this.customText = text.trim();
+        if (!this.textShapes[this.customText]) {
+            this.textShapes[this.customText] = ShapeGenerator.text(this.customText);
+        }
+        this.customTextPoints = this.textShapes[this.customText];
+    }
+
     getNextText() {
-        const text = this.textList[this.currentTextIndex];
-        this.currentTextIndex = (this.currentTextIndex + 1) % this.textList.length;
+        const text = this.defaultTexts[this.currentTextIndex];
+        this.currentTextIndex = (this.currentTextIndex + 1) % this.defaultTexts.length;
         return text;
     }
 
@@ -132,6 +159,7 @@ export class ParticleSystem {
 
     setShape(shape) {
         this.currentShape = shape;
+        this.transitionProgress = 0;
 
         // Rang palitrasini tanlash
         let palette = ColorPalettes.fire;
@@ -142,8 +170,6 @@ export class ParticleSystem {
 
         // Shakl nuqtalarini olish
         let shapePoints = null;
-
-        // Text shapes uchun
         if (this.textShapes[shape]) {
             shapePoints = this.textShapes[shape];
         }
@@ -151,16 +177,14 @@ export class ParticleSystem {
         for (let i = 0; i < this.count; i++) {
             let p;
 
-            // Shakl generatori
             if (shapePoints && shapePoints.length > 0) {
                 const target = shapePoints[i % shapePoints.length];
                 p = {
                     x: target.x,
                     y: target.y,
-                    z: target.z + (Math.random() - 0.5) * 1.5
+                    z: target.z + (Math.random() - 0.5) * 1.2
                 };
             } else {
-                // ShapeGenerator dan olish
                 switch (shape) {
                     case 'heart': p = ShapeGenerator.heart(); break;
                     case 'doubleheart': p = ShapeGenerator.doubleheart(); break;
@@ -195,8 +219,14 @@ export class ParticleSystem {
             this.targetPositions[i * 3 + 1] = p.y;
             this.targetPositions[i * 3 + 2] = p.z;
 
-            // Rang
-            const color = palette[Math.floor(Math.random() * palette.length)];
+            // Delay - har bir zarracha turli vaqtda o'z joyiga boradi
+            this.particleDelay[i] = Math.random() * 0.6;
+
+            // Rang - gradient effekt
+            const colorIdx = Math.floor(Math.random() * palette.length);
+            const nextIdx = (colorIdx + 1) % palette.length;
+            const t = Math.random();
+            const color = palette[colorIdx].clone().lerp(palette[nextIdx], t);
             this.colors[i * 3] = color.r;
             this.colors[i * 3 + 1] = color.g;
             this.colors[i * 3 + 2] = color.b;
@@ -205,33 +235,47 @@ export class ParticleSystem {
         this.geometry.attributes.color.needsUpdate = true;
     }
 
-    updateColors(palette, animate = false) {
-        for (let i = 0; i < this.count; i++) {
-            let color;
+    // Custom text shaklini ko'rsatish (2 barmoq = peace gesture bilan)
+    showCustomText() {
+        if (this.customTextPoints && this.customTextPoints.length > 0) {
+            this.currentShape = '_customText';
+            this.transitionProgress = 0;
+            const palette = ColorPalettes.neon;
+            this.currentPalette = palette;
 
-            if (animate) {
-                // Rainbow effekt
-                const hue = (this.rainbowOffset + i / this.count) % 1;
-                color = new THREE.Color().setHSL(hue, 1, 0.5);
-            } else {
-                color = palette[Math.floor(Math.random() * palette.length)];
+            for (let i = 0; i < this.count; i++) {
+                const target = this.customTextPoints[i % this.customTextPoints.length];
+                this.targetPositions[i * 3] = target.x;
+                this.targetPositions[i * 3 + 1] = target.y;
+                this.targetPositions[i * 3 + 2] = target.z + (Math.random() - 0.5) * 1.0;
+
+                this.particleDelay[i] = Math.random() * 0.6;
+
+                const colorIdx = Math.floor(Math.random() * palette.length);
+                const nextIdx = (colorIdx + 1) % palette.length;
+                const t = Math.random();
+                const color = palette[colorIdx].clone().lerp(palette[nextIdx], t);
+                this.colors[i * 3] = color.r;
+                this.colors[i * 3 + 1] = color.g;
+                this.colors[i * 3 + 2] = color.b;
             }
-
-            this.colors[i * 3] = color.r;
-            this.colors[i * 3 + 1] = color.g;
-            this.colors[i * 3 + 2] = color.b;
+            this.geometry.attributes.color.needsUpdate = true;
         }
-        this.geometry.attributes.color.needsUpdate = true;
     }
 
     update(interactionData) {
-        // Performance: use delta time for consistent animation
-        // SLOWER: reduced time increments for smoother, slower animations
-        this.time += 0.008;  // Was 0.016 - now 2x slower
-        this.pulsePhase += 0.02;  // Was 0.05 - now 2.5x slower
-        this.rainbowOffset += 0.001;  // Was 0.002 - now 2x slower
+        const dt = 0.012;
+        this.time += dt;
+        this.pulsePhase += 0.025;
+        this.rainbowOffset += 0.0008;
+        this.breathe = Math.sin(this.time * 1.5) * 0.02;
+        this.sparkleTime += 0.03;
 
-        // Cache array references
+        // Transition progress
+        if (this.transitionProgress < 1.0) {
+            this.transitionProgress = Math.min(1.0, this.transitionProgress + dt * 1.8);
+        }
+
         const positions = this.geometry.attributes.position.array;
         const colors = this.geometry.attributes.color.array;
         const velocities = this.velocities;
@@ -249,11 +293,10 @@ export class ParticleSystem {
         let handAngle = 0;
         let openFingers = 0;
 
-        // Birinchi qo'l
         if (interactionData && interactionData.type !== 'none') {
             isHandPresent = true;
-            targetX = (0.5 - interactionData.position.x) * 22;
-            targetY = (0.5 - interactionData.position.y) * 16;
+            targetX = (0.5 - interactionData.position.x) * 24;
+            targetY = (0.5 - interactionData.position.y) * 18;
             targetZ = 0;
 
             currentGesture = interactionData.type;
@@ -261,84 +304,77 @@ export class ParticleSystem {
             handAngle = interactionData.handAngle || 0;
             openFingers = interactionData.openFingers || 0;
 
-            // Guide ko'rsatish
+            // Guide sphere
             this.guideInfo.visible = true;
-            this.guideInfo.position.set(targetX, targetY, targetZ);
+            this.guideInfo.position.set(targetX, targetY, 0.5);
+
+            // Pulsing guide
+            const pulseScale = 0.6 + Math.sin(this.time * 4) * 0.15 + openFingers * 0.1;
+            this.guideInfo.scale.set(pulseScale, pulseScale, pulseScale);
+
+            // Guide ring
+            this.guideRing.visible = true;
+            this.guideRing.position.set(targetX, targetY, 0.3);
+            const ringScale = 1.5 + Math.sin(this.time * 3) * 0.3;
+            this.guideRing.scale.set(ringScale, ringScale, ringScale);
+            this.guideRing.rotation.z = this.time * 0.5;
 
             // Gestga qarab guide rangi
-            switch (currentGesture) {
-                case 'pinch': this.guideInfo.material.color.set(0xff0000); break;
-                case 'fist': this.guideInfo.material.color.set(0xff5500); break;
-                case 'peace': this.guideInfo.material.color.set(0x00ff00); break;
-                case 'thumbs_up': this.guideInfo.material.color.set(0xff00ff); break;
-                case 'point': this.guideInfo.material.color.set(0xffff00); break;
-                case 'rock': this.guideInfo.material.color.set(0x9400d3); break;
-                default: this.guideInfo.material.color.set(0xffffff);
-            }
-
-            // Hajmni gestga qarab o'zgartirish
-            const scale = 0.8 + openFingers * 0.15;
-            this.guideInfo.scale.set(scale, scale, scale);
+            const guideColors = {
+                'pinch': 0xff2244, 'fist': 0xff6600, 'peace': 0x22ff88,
+                'thumbs_up': 0xff44ff, 'point': 0xffdd00, 'rock': 0xaa00ff,
+                'three': 0x00ddff, 'four': 0x44ff44, 'open': 0xffffff
+            };
+            const gc = guideColors[currentGesture] || 0xffffff;
+            this.guideInfo.material.color.set(gc);
+            this.guideRing.material.color.set(gc);
+            this.guideInfo.material.opacity = 0.4 + Math.sin(this.time * 5) * 0.2;
 
             this.lastTargetPos = { x: targetX, y: targetY, z: targetZ };
 
             if (interactionData.velocity) {
-                // SLOWER: reduced velocity multiplier for smoother movement
-                handVx = -interactionData.velocity.x * 25;  // Was 50
-                handVy = -interactionData.velocity.y * 20;  // Was 40
-            }
-
-            // Ikkinchi qo'l
-            if (interactionData.secondHand) {
-                const sh = interactionData.secondHand;
-                const sx = (0.5 - sh.position.x) * 22;
-                const sy = (0.5 - sh.position.y) * 16;
-                this.guideInfo2.visible = true;
-                this.guideInfo2.position.set(sx, sy, 0);
-            } else {
-                this.guideInfo2.visible = false;
+                handVx = -interactionData.velocity.x * 30;
+                handVy = -interactionData.velocity.y * 25;
             }
         } else {
             this.guideInfo.visible = false;
-            this.guideInfo2.visible = false;
+            this.guideRing.visible = false;
         }
 
-        // Portlash effekti - SLOWER
+        // Portlash
         if (this.isExploding) {
-            this.explosionPhase += 0.012;  // Was 0.02
+            this.explosionPhase += 0.015;
             if (this.explosionPhase > 1) {
                 this.isExploding = false;
                 this.explosionPhase = 0;
             }
         }
 
-        // Dinamik qaytish tezligi - SLOWER for smoother transitions
+        // Return speed - gesture based
         const speed = Math.sqrt(handVx * handVx + handVy * handVy);
-        let dynamicReturn = isHandPresent ? 0.025 : 0.005;  // Was 0.04 : 0.008
-        if (isHandPresent && speed > 2.0) {
-            dynamicReturn = 0.005;  // Was 0.008
-        }
+        let returnForce = isHandPresent ? 0.03 : 0.006;
+        if (isHandPresent && speed > 1.5) returnForce = 0.008;
+        if (currentGesture === 'fist') returnForce = 0.1;
 
-        // Fist gestida kuchli tortilish
-        if (currentGesture === 'fist') {
-            dynamicReturn = 0.08;  // Was 0.12
-        }
-
-        // Pre-compute friction and rainbow mode - HIGHER friction = slower
-        const friction = currentGesture === 'fist' ? 0.95 : 0.92;  // Was 0.92 : 0.88
+        // Friction - gesture based
+        const friction = currentGesture === 'fist' ? 0.94 : 0.91;
         const isRainbowMode = currentGesture === 'rock' || currentGesture === 'peace';
 
-        // Pre-compute values outside loop - SLOWER animation timing
-        const sinTable = Math.sin(this.time * 0.25);  // Was 0.5
-        const cosTable = Math.cos(this.time * 0.15);  // Was 0.3
-        const sinTable2 = Math.sin(this.time * 0.1);  // Was 0.2
-        const timeWave = this.time * 2.5;  // Was 5
+        // Pre-computed wave values
+        const waveA = Math.sin(this.time * 0.3);
+        const waveB = Math.cos(this.time * 0.2);
+        const waveC = Math.sin(this.time * 0.15);
         const invCount = this.invCount;
 
         for (let i = 0; i < count; i++) {
             const ix = i * 3;
             const iy = ix + 1;
             const iz = ix + 2;
+
+            // Transition delay per particle
+            const delay = this.particleDelay[i];
+            const localProgress = Math.max(0, Math.min(1, (this.transitionProgress - delay) / (1 - delay)));
+            const easeProgress = localProgress * localProgress * (3 - 2 * localProgress); // smoothstep
 
             let px = positions[ix];
             let py = positions[iy];
@@ -352,151 +388,148 @@ export class ParticleSystem {
             let targetBaseY = targetY;
             let targetBaseZ = targetZ;
 
-            // Gestga qarab 3D transformatsiya
+            // Breathing animation - shape-ga hayot berish
+            if (this.currentShape !== 'trail' && isHandPresent) {
+                tx *= (1 + this.breathe);
+                ty *= (1 + this.breathe);
+            }
+
+            // 3D rotation based on gesture (non-open, non-none)
             if (isHandPresent && currentGesture !== 'open' && currentGesture !== 'none') {
-                // Qo'l pozitsiyasiga qarab rotation
-                const rotY = targetX * 0.12;
-                const rotX = -targetY * 0.12;
+                const rotY = targetX * 0.08;
+                const rotX = -targetY * 0.08;
 
                 const cosY = Math.cos(rotY);
                 const sinY = Math.sin(rotY);
                 const cosX = Math.cos(rotX);
                 const sinX = Math.sin(rotX);
 
-                // Rotation Y
-                let rtx = tx * cosY - tz * sinY;
-                let rtz = tx * sinY + tz * cosY;
-                let rty = ty;
-
-                // Rotation X
-                let rty2 = rty * cosX - rtz * sinX;
-                let rtz2 = rty * sinX + rtz * cosX;
+                const rtx = tx * cosY - tz * sinY;
+                const rtz = tx * sinY + tz * cosY;
+                const rty = ty * cosX - rtz * sinX;
+                const rtz2 = ty * sinX + rtz * cosX;
 
                 tx = rtx;
-                ty = rty2;
+                ty = rty;
                 tz = rtz2;
             }
 
-            // Qo'l yo'qligida tarqalish - Optimized with pre-computed values
+            // Qo'l yo'q - ambient tarqalish
             if (!isHandPresent && this.currentShape === 'trail') {
-                const iSeed = i * 12.9898;
-                const iSeed2 = i * 78.233;
-                const iSeed3 = i * 0.5;
-                tx = Math.sin(iSeed) * sinTable * 30 + Math.cos(iSeed) * 15;
-                ty = Math.cos(iSeed2) * cosTable * 20 + Math.sin(iSeed2) * 10;
-                tz = Math.sin(iSeed3) * sinTable2 * 12;
+                const seed1 = i * 12.9898;
+                const seed2 = i * 78.233;
+                const seed3 = i * 0.5;
+                tx = Math.sin(seed1) * waveA * 25 + Math.cos(seed1) * 12;
+                ty = Math.cos(seed2) * waveB * 18 + Math.sin(seed2) * 8;
+                tz = Math.sin(seed3) * waveC * 10;
                 targetBaseX = 0;
                 targetBaseY = 0;
                 targetBaseZ = 0;
             }
 
-            // Portlash effekti
+            // Portlash
             if (this.isExploding) {
-                const angle = Math.random() * Math.PI * 2;
+                const angle = Math.random() * this.PI2;
                 const phi = Math.acos(2 * Math.random() - 1);
-                tx = 20 * this.explosionPhase * Math.sin(phi) * Math.cos(angle);
-                ty = 20 * this.explosionPhase * Math.sin(phi) * Math.sin(angle);
-                tz = 20 * this.explosionPhase * Math.cos(phi);
+                const ep = this.explosionPhase;
+                tx = 18 * ep * Math.sin(phi) * Math.cos(angle);
+                ty = 18 * ep * Math.sin(phi) * Math.sin(angle);
+                tz = 18 * ep * Math.cos(phi);
             }
 
-            // Kuchlar
-            let fx = (tx + targetBaseX - px) * dynamicReturn;
-            let fy = (ty + targetBaseY - py) * dynamicReturn;
-            let fz = (tz + targetBaseZ - pz) * dynamicReturn;
+            // Effective return force with easeProgress
+            const effectiveReturn = returnForce * (0.3 + easeProgress * 0.7);
 
-            // Qo'l interaksiyasi
+            let fx = (tx + targetBaseX - px) * effectiveReturn;
+            let fy = (ty + targetBaseY - py) * effectiveReturn;
+            let fz = (tz + targetBaseZ - pz) * effectiveReturn;
+
+            // Qo'l bilan interaksiya
             if (isHandPresent) {
                 const dx = px - targetBaseX;
                 const dy = py - targetBaseY;
                 const dz = pz - targetBaseZ;
-                const distSq = dx * dx + dy * dy + dz * dz;
-                const dist = Math.sqrt(distSq);
+                const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.001;
 
-                // Gestga qarab turli xil ta'sir
                 switch (currentGesture) {
-                    case 'fist':
-                        // Kuchli tortilish markazga
-                        if (dist > 0.5) {
-                            const attract = 0.15;
+                    case 'fist': {
+                        if (dist > 0.3) {
+                            const attract = 0.12;
                             fx -= dx * attract;
                             fy -= dy * attract;
                             fz -= dz * attract;
                         }
                         break;
-
-                    case 'open':
-                        // Ochiq qo'l - suyuqlik harakati
-                        const radius = 15.0;
+                    }
+                    case 'open': {
+                        const radius = 14.0;
                         if (dist < radius) {
-                            const influence = (1.0 - dist / radius);
-                            fx += handVx * influence * 3.5;
-                            fy += handVy * influence * 3.5;
+                            const influence = 1.0 - dist / radius;
+                            const infl2 = influence * influence; // Quadratic falloff
+                            fx += handVx * infl2 * 4.0;
+                            fy += handVy * infl2 * 4.0;
 
-                            // Yengil itarish
-                            if (dist < 5.0) {
-                                const repulse = (5.0 - dist) * 0.08;
-                                fx += dx * repulse;
-                                fy += dy * repulse;
-                                fz += dz * repulse;
+                            if (dist < 4.0) {
+                                const repulse = (4.0 - dist) * 0.06;
+                                fx += dx / dist * repulse;
+                                fy += dy / dist * repulse;
+                                fz += dz / dist * repulse;
                             }
                         }
                         break;
-
-                    case 'point':
-                        // Laser effekti - bir yo'nalishda harakatlanish
-                        const laserDir = { x: Math.cos(handAngle), y: Math.sin(handAngle) };
+                    }
+                    case 'point': {
                         if (dist < 12) {
-                            fx += laserDir.x * 0.3;
-                            fy += laserDir.y * 0.3;
+                            const laserStr = 0.2 * (1 - dist / 12);
+                            fx += Math.cos(handAngle) * laserStr;
+                            fy += Math.sin(handAngle) * laserStr;
                         }
                         break;
-
-                    case 'peace':
-                        // Tinch to'lqin - yumshoq tarqalish (SLOWER)
+                    }
+                    case 'peace': {
                         if (dist < 10) {
-                            const wave = Math.sin(dist * 1.5 - this.time * 2) * 0.08;  // Was dist*2-time*5, 0.1
-                            fx += dx * wave;
-                            fy += dy * wave;
+                            const wave = Math.sin(dist * 1.2 - this.time * 2.5) * 0.06;
+                            fx += dx / dist * wave;
+                            fy += dy / dist * wave;
                         }
                         break;
-
-                    case 'rock':
-                        // Spiral harakat - SLOWER
+                    }
+                    case 'rock': {
                         if (dist < 12) {
-                            const spiralForce = 0.06;  // Was 0.1
-                            fx += -dy * spiralForce;
-                            fy += dx * spiralForce;
+                            const sf = 0.05 * (1 - dist / 12);
+                            fx += -dy / dist * sf * dist;
+                            fy += dx / dist * sf * dist;
                         }
                         break;
-
-                    case 'thumbs_up':
-                        // Yuqoriga ko'tarish
+                    }
+                    case 'thumbs_up': {
                         if (dist < 15) {
-                            fy += 0.15 * (1 - dist / 15);
+                            fy += 0.12 * (1 - dist / 15);
+                            // Yonlarga yoyilish
+                            const spread = 0.03 * (1 - dist / 15);
+                            fx += (Math.random() - 0.5) * spread;
                         }
                         break;
+                    }
                 }
             }
 
-            // Tezlikni qo'llash - use cached reference
+            // Apply forces
             velocities[ix] += fx;
             velocities[iy] += fy;
             velocities[iz] += fz;
 
-            // Pozitsiyani yangilash
             positions[ix] += velocities[ix];
             positions[iy] += velocities[iy];
             positions[iz] += velocities[iz];
 
-            // Ishqalanish - pre-computed outside loop would be ideal
             velocities[ix] *= friction;
             velocities[iy] *= friction;
             velocities[iz] *= friction;
 
-            // Rang animatsiyasi (pulse effekt) - Optimized HSL conversion
+            // Rainbow rang
             if (isRainbowMode) {
                 const hue = (this.rainbowOffset + i * invCount) % 1;
-                // Optimized HSL to RGB conversion (inline)
                 const h6 = hue * 6;
                 const hi = Math.floor(h6) % 6;
                 const f = h6 - Math.floor(h6);
@@ -514,12 +547,17 @@ export class ParticleSystem {
                 colors[iy] = g;
                 colors[iz] = b;
             }
+
+            // Sparkle effekt - tasodifiy zarrachalar yonib-o'chishi
+            if (Math.random() < 0.002) {
+                colors[ix] = 1;
+                colors[iy] = 1;
+                colors[iz] = 1;
+            }
         }
 
         this.geometry.attributes.position.needsUpdate = true;
-
-        // Rainbow gestlari uchun rang yangilash
-        if (currentGesture === 'rock' || currentGesture === 'peace') {
+        if (isRainbowMode || Math.random() < 0.05) {
             this.geometry.attributes.color.needsUpdate = true;
         }
     }

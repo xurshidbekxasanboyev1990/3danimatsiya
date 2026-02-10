@@ -13,152 +13,156 @@ export class HandTracker {
         this.lastGesture = 'none';
         this.gestureStartTime = 0;
         this.handCount = 0;
+
+        // Velocity smoothing
+        this.smoothedVelocity = { x: 0, y: 0 };
+        this.velocityAlpha = 0.4;
+
+        // Status callback
+        this.onStatusChange = null;
     }
 
     async init() {
-        const vision = await FilesetResolver.forVisionTasks(
-            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
-        );
+        try {
+            if (this.onStatusChange) this.onStatusChange('loading', 'AI model yuklanmoqda...');
 
-        this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
-            baseOptions: {
-                modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                delegate: "GPU"
-            },
-            runningMode: "VIDEO",
-            numHands: 2
-        });
+            const vision = await FilesetResolver.forVisionTasks(
+                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+            );
 
-        this.isLoaded = true;
-        this.startWebcam();
-    }
-
-    startWebcam() {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: 320,
-                    height: 240,
-                    frameRate: { ideal: 30 }
-                }
-            }).then((stream) => {
-                this.video.srcObject = stream;
-                this.video.addEventListener("loadeddata", () => {
-                    this.video.play();
-                    this.isLoaded = true; // Ensure logic knows video is ready
-                    console.log("Webcam started");
-                });
-            }).catch((err) => {
-                console.error("Webcam error:", err);
-                alert("Camera access denied or missing. Please allow camera access.");
+            this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                    delegate: "GPU"
+                },
+                runningMode: "VIDEO",
+                numHands: 2
             });
-        } else {
-            console.error("getUserMedia not supported");
+
+            this.isLoaded = true;
+            if (this.onStatusChange) this.onStatusChange('loaded', 'AI model tayyor!');
+            this.startWebcam();
+        } catch (err) {
+            console.error("HandTracker init error:", err);
+            if (this.onStatusChange) this.onStatusChange('error', 'AI model yuklanmadi');
         }
     }
 
+    startWebcam() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            console.error("getUserMedia not supported");
+            if (this.onStatusChange) this.onStatusChange('error', 'Camera qo\'llab-quvvatlanmaydi');
+            return;
+        }
+
+        navigator.mediaDevices.getUserMedia({
+            video: {
+                width: 320,
+                height: 240,
+                frameRate: { ideal: 30 }
+            }
+        }).then((stream) => {
+            this.video.srcObject = stream;
+            this.video.addEventListener("loadeddata", () => {
+                this.video.play();
+                this.isLoaded = true;
+                if (this.onStatusChange) this.onStatusChange('ready', 'Camera tayyor! ✌️');
+                console.log("Webcam started");
+            });
+        }).catch((err) => {
+            console.error("Webcam error:", err);
+            if (this.onStatusChange) this.onStatusChange('error', 'Camera ruxsati yo\'q');
+        });
+    }
+
     detect() {
-        // More robust check
         if (!this.handLandmarker || !this.video || !this.video.videoWidth) return null;
 
-        let startTimeMs = performance.now();
+        const startTimeMs = performance.now();
         if (this.video.currentTime !== this.lastVideoTime) {
             this.lastVideoTime = this.video.currentTime;
             try {
                 this.results = this.handLandmarker.detectForVideo(this.video, startTimeMs);
             } catch (e) {
-                // Ignore occasional detection errors
+                // Skip frame
             }
         }
 
         return this.results;
     }
 
-    // Barmoq bukilganligini tekshirish
-    isFingerExtended(landmarks, fingerTips, fingerPips) {
-        const tip = landmarks[fingerTips];
-        const pip = landmarks[fingerPips];
-        const mcp = landmarks[fingerPips - 1];
+    isFingerExtended(landmarks, fingerTip, fingerPip) {
+        const tip = landmarks[fingerTip];
+        const pip = landmarks[fingerPip];
+        const mcp = landmarks[fingerPip - 1];
         return tip.y < pip.y && tip.y < mcp.y;
     }
 
-    // Bosh barmoq tekshirish (alohida logika)
     isThumbExtended(landmarks) {
         const thumbTip = landmarks[4];
         const thumbIp = landmarks[3];
         const thumbMcp = landmarks[2];
-        // Thumb extends sideways
         return Math.abs(thumbTip.x - thumbMcp.x) > Math.abs(thumbIp.x - thumbMcp.x) * 1.2;
     }
 
-    // Qo'l ochiqlik darajasi (0-5)
     getOpenFingerCount(landmarks) {
         let count = 0;
         if (this.isThumbExtended(landmarks)) count++;
-        if (this.isFingerExtended(landmarks, 8, 6)) count++;  // Index
-        if (this.isFingerExtended(landmarks, 12, 10)) count++; // Middle
-        if (this.isFingerExtended(landmarks, 16, 14)) count++; // Ring
-        if (this.isFingerExtended(landmarks, 20, 18)) count++; // Pinky
+        if (this.isFingerExtended(landmarks, 8, 6)) count++;
+        if (this.isFingerExtended(landmarks, 12, 10)) count++;
+        if (this.isFingerExtended(landmarks, 16, 14)) count++;
+        if (this.isFingerExtended(landmarks, 20, 18)) count++;
         return count;
     }
 
-    // Gestni aniqlash
     detectGestureType(landmarks) {
         const thumbTip = landmarks[4];
         const indexTip = landmarks[8];
-        const middleTip = landmarks[12];
-        const ringTip = landmarks[16];
-        const pinkyTip = landmarks[20];
         const wrist = landmarks[0];
-        const palmCenter = landmarks[9];
 
-        // Barmoqlar soni
         const openFingers = this.getOpenFingerCount(landmarks);
 
-        // Pinch - Bosh barmoq va ko'rsatkich barmoq yaqin
-        const pinchDist = Math.sqrt(
-            Math.pow(thumbTip.x - indexTip.x, 2) +
-            Math.pow(thumbTip.y - indexTip.y, 2)
-        );
+        // Pinch
+        const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
         if (pinchDist < 0.05) return 'pinch';
 
-        // Fist - Barcha barmoqlar yopiq
+        // Fist
         if (openFingers === 0) return 'fist';
 
-        // Thumbs Up - Faqat bosh barmoq ochiq va yuqorida
+        // Thumbs Up
         if (this.isThumbExtended(landmarks) && openFingers === 1 && thumbTip.y < wrist.y) {
             return 'thumbs_up';
         }
 
-        // Peace Sign - Faqat ko'rsatkich va o'rta barmoq ochiq
         const indexExt = this.isFingerExtended(landmarks, 8, 6);
         const middleExt = this.isFingerExtended(landmarks, 12, 10);
         const ringExt = this.isFingerExtended(landmarks, 16, 14);
         const pinkyExt = this.isFingerExtended(landmarks, 20, 18);
 
+        // Peace Sign ✌️ - 2 barmoq!
         if (indexExt && middleExt && !ringExt && !pinkyExt) {
             return 'peace';
         }
 
-        // Point - Faqat ko'rsatkich barmoq ochiq
+        // Point
         if (indexExt && !middleExt && !ringExt && !pinkyExt) {
             return 'point';
         }
 
-        // Rock - Ko'rsatkich va pinky ochiq, qolganlari yopiq
+        // Rock
         if (indexExt && pinkyExt && !middleExt && !ringExt) {
             return 'rock';
         }
 
-        // Three - 3 barmoq ochiq
+        // Three
         if (openFingers === 3) return 'three';
 
-        // Four - 4 barmoq ochiq (bosh barmoqsiz)
+        // Four
         if (openFingers === 4 && !this.isThumbExtended(landmarks)) {
             return 'four';
         }
 
-        // Open Palm - Hammasi ochiq
+        // Open Palm
         if (openFingers >= 4) return 'open';
 
         return 'unknown';
@@ -167,45 +171,48 @@ export class HandTracker {
     getGesture() {
         if (!this.results || this.results.landmarks.length === 0) {
             this.handCount = 0;
+            // Smoothed velocity decay
+            this.smoothedVelocity.x *= 0.8;
+            this.smoothedVelocity.y *= 0.8;
             return { type: 'none', position: null, velocity: null, handCount: 0 };
         }
 
         this.handCount = this.results.landmarks.length;
         const landmarks = this.results.landmarks[0];
 
-        // Qo'l markazi
+        // Qo'l markazi - 3 nuqta o'rtachasi
         let centerX = (landmarks[0].x + landmarks[5].x + landmarks[17].x) / 3;
         let centerY = (landmarks[0].y + landmarks[5].y + landmarks[17].y) / 3;
 
-        // Smoothing - IMPROVED: higher alpha for smoother, more stable tracking
+        // Smoothing
         if (this.smoothedPosition) {
-            const alpha = 0.35;  // Was 0.25 - higher = smoother but slightly slower response
+            const alpha = 0.35;
             centerX = this.smoothedPosition.x + (centerX - this.smoothedPosition.x) * alpha;
             centerY = this.smoothedPosition.y + (centerY - this.smoothedPosition.y) * alpha;
         }
         this.smoothedPosition = { x: centerX, y: centerY };
 
-        // Velocity
+        // Velocity with smoothing
         let velocity = { x: 0, y: 0 };
         if (this.previousPosition) {
-            velocity = {
-                x: centerX - this.previousPosition.x,
-                y: centerY - this.previousPosition.y
-            };
+            const rawVx = centerX - this.previousPosition.x;
+            const rawVy = centerY - this.previousPosition.y;
+            this.smoothedVelocity.x += (rawVx - this.smoothedVelocity.x) * this.velocityAlpha;
+            this.smoothedVelocity.y += (rawVy - this.smoothedVelocity.y) * this.velocityAlpha;
+            velocity = { ...this.smoothedVelocity };
         }
         this.previousPosition = { x: centerX, y: centerY };
 
-        // Gest aniqlash
+        // Gest
         const gestureType = this.detectGestureType(landmarks);
 
-        // Gest barqarorligi uchun tarix - IMPROVED: longer history for stability
+        // Gest barqarorligi
         this.gestureHistory.push(gestureType);
-        if (this.gestureHistory.length > 8) this.gestureHistory.shift();  // Was 5
+        if (this.gestureHistory.length > 10) this.gestureHistory.shift();
 
-        // Eng ko'p takrorlangan gest
         const stableGesture = this.getMostFrequent(this.gestureHistory);
 
-        // Ikkala qo'l uchun ma'lumot
+        // 2-qo'l
         let secondHand = null;
         if (this.results.landmarks.length > 1) {
             const lm2 = this.results.landmarks[1];
@@ -218,13 +225,11 @@ export class HandTracker {
             };
         }
 
-        // Qo'l hajmi (masshtab uchun)
-        const handSize = Math.sqrt(
-            Math.pow(landmarks[0].x - landmarks[9].x, 2) +
-            Math.pow(landmarks[0].y - landmarks[9].y, 2)
+        const handSize = Math.hypot(
+            landmarks[0].x - landmarks[9].x,
+            landmarks[0].y - landmarks[9].y
         );
 
-        // Qo'l burchagi (rotation uchun)
         const handAngle = Math.atan2(
             landmarks[12].y - landmarks[0].y,
             landmarks[12].x - landmarks[0].x

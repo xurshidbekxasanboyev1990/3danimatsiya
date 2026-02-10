@@ -3,268 +3,190 @@ import { HandTracker } from './HandTracker.js';
 import { ParticleSystem } from './ParticleSystem.js';
 
 async function main() {
-    // 1. Setup Three.js with performance optimizations
+    // === THREE.JS SETUP ===
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.z = 20;
 
     const renderer = new THREE.WebGLRenderer({
         alpha: true,
-        antialias: false, // Performance: disable for better FPS
+        antialias: false,
         powerPreference: 'high-performance'
     });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap pixel ratio for performance
-    renderer.setClearColor(0x000000, 1);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x050510, 1);
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-    // Resize handler
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // 2. Setup Components
+    // === COMPONENTS ===
     const particleSystem = new ParticleSystem(scene);
     const handTracker = new HandTracker();
 
-    // FPS Counter
-    const fpsDisplay = document.createElement('div');
-    fpsDisplay.id = 'fps-display';
-    fpsDisplay.innerHTML = 'FPS: --';
-    document.body.appendChild(fpsDisplay);
+    // === INPUT FIELD ===
+    const inputField = document.getElementById('text-input');
+    const inputHint = document.getElementById('input-hint');
 
-    let frameCount = 0;
-    let lastFpsUpdate = performance.now();
-    let currentFps = 60;
+    // Input field focus - klaviatura gestni buzmasin
+    inputField.addEventListener('focus', () => {
+        inputHint.textContent = '✌️ Peace belgisi ko\'rsating → matn paydo bo\'ladi!';
+        inputHint.style.color = '#00ff88';
+    });
+    inputField.addEventListener('blur', () => {
+        if (!inputField.value.trim()) {
+            inputHint.textContent = 'Matn yozing va ✌️ ko\'rsating';
+            inputHint.style.color = 'rgba(255,255,255,0.5)';
+        }
+    });
+    inputField.addEventListener('input', () => {
+        const text = inputField.value.trim();
+        if (text) {
+            particleSystem.setCustomText(text);
+            inputHint.textContent = `"${text}" - ✌️ Peace ko'rsating!`;
+            inputHint.style.color = '#ffdd00';
+        }
+    });
 
-    // UI elementlarini yaratish
-    const gestureDisplay = document.createElement('div');
-    gestureDisplay.id = 'gesture-display';
-    gestureDisplay.innerHTML = `
-        <div class="gesture-info">
-            <span class="gesture-icon">👋</span>
-            <span class="gesture-name">Qo'lingizni ko'rsating</span>
-        </div>
-    `;
-    document.body.appendChild(gestureDisplay);
-
-    // Stil qo'shish
-    const style = document.createElement('style');
-    style.textContent = `
-        #fps-display {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            background: rgba(0, 0, 0, 0.6);
-            color: #0f0;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            font-weight: bold;
-            z-index: 1000;
-            border: 1px solid rgba(0, 255, 0, 0.3);
+    // === STATUS ===
+    const statusEl = document.getElementById('status-text');
+    handTracker.onStatusChange = (state, msg) => {
+        if (statusEl) {
+            statusEl.textContent = msg;
+            statusEl.className = 'status-' + state;
         }
-        #fps-display.warning { color: #ff0; border-color: rgba(255, 255, 0, 0.3); }
-        #fps-display.critical { color: #f00; border-color: rgba(255, 0, 0, 0.3); }
-        #gesture-display {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(10px);
-            padding: 15px 30px;
-            border-radius: 50px;
-            color: white;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            z-index: 1000;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
-            transition: all 0.3s ease;
-        }
-        #gesture-display:hover {
-            transform: translateX(-50%) scale(1.05);
-        }
-        .gesture-info {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        .gesture-icon {
-            font-size: 28px;
-            filter: drop-shadow(0 0 10px currentColor);
-        }
-        .gesture-name {
-            font-size: 16px;
-            font-weight: 500;
-            letter-spacing: 0.5px;
-        }
-        .shape-name {
-            font-size: 12px;
-            opacity: 0.7;
-            margin-top: 4px;
-        }
-        #instructions {
-            background: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            max-width: 320px;
-        }
-        #instructions h3 {
-            margin: 0 0 10px 0;
-            font-size: 14px;
-            color: #ff6b6b;
-        }
-        #instructions p {
-            margin: 5px 0;
-            font-size: 12px;
-            line-height: 1.5;
-        }
-        #video-preview {
-            border-radius: 10px;
-            border: 2px solid rgba(255, 100, 100, 0.5);
-            box-shadow: 0 0 20px rgba(255, 100, 100, 0.3);
-        }
-    `;
-    document.head.appendChild(style);
-
-    // Gesture icon va nomlarini mapping
-    const gestureInfo = {
-        'none': { icon: '👋', name: 'Qo\'lingizni ko\'rsating', shape: '' },
-        'open': { icon: '🖐️', name: 'Ochiq qo\'l - Suyuqlik', shape: 'Trail' },
-        'pinch': { icon: '🤏', name: 'Qisish - Matn shakli', shape: '' },
-        'fist': { icon: '✊', name: 'Musht - Portlash', shape: 'Firework' },
-        'peace': { icon: '✌️', name: 'Tinchlik - To\'lqin', shape: 'Peace' },
-        'thumbs_up': { icon: '👍', name: 'Yaxshi - Yurak', shape: 'Heart' },
-        'point': { icon: '👆', name: 'Ko\'rsatish - Yulduz', shape: 'Star' },
-        'rock': { icon: '🤘', name: 'Rock - Galaktika', shape: 'Galaxy' },
-        'three': { icon: '🤟', name: 'Uchta - Spiral', shape: 'Spiral' },
-        'four': { icon: '🖖', name: 'To\'rtta - Kapalak', shape: 'Butterfly' },
-        'unknown': { icon: '❓', name: 'Noma\'lum', shape: '' }
     };
 
-    // 3. Init Hand Tracker
-    try {
-        await handTracker.init();
-        document.getElementById('loading').style.display = 'none';
-        console.log("Hand tracking initialized");
-    } catch (e) {
-        console.error("Failed to init hand tracking", e);
-        document.getElementById('loading').textContent = "Error loading tracking model. Check console.";
+    // === FPS ===
+    const fpsEl = document.getElementById('fps-counter');
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+
+    // === GESTURE UI ===
+    const gestureEl = document.getElementById('gesture-display');
+    const gestureInfo = {
+        'none': { icon: '👋', name: 'Qo\'lingizni ko\'rsating' },
+        'open': { icon: '🖐️', name: 'Ochiq qo\'l → Suyuqlik', color: '#ffffff' },
+        'pinch': { icon: '🤏', name: 'Qisish → Matn shapki', color: '#ff2244' },
+        'fist': { icon: '✊', name: 'Musht → Portlash!', color: '#ff6600' },
+        'peace': { icon: '✌️', name: 'Tinchlik → Matn / To\'lqin', color: '#22ff88' },
+        'thumbs_up': { icon: '👍', name: 'Super → Yurak ❤️', color: '#ff44ff' },
+        'point': { icon: '☝️', name: 'Ko\'rsatish → Yulduz ⭐', color: '#ffdd00' },
+        'rock': { icon: '🤘', name: 'Rock → Galaktika 🌀', color: '#aa00ff' },
+        'three': { icon: '🤟', name: 'Uchta → Spiral', color: '#00ddff' },
+        'four': { icon: '🖖', name: 'To\'rtta → Kapalak 🦋', color: '#44ff44' },
+        'unknown': { icon: '❓', name: 'Noma\'lum', color: '#888' }
+    };
+
+    function updateGestureUI(gesture) {
+        const info = gestureInfo[gesture] || gestureInfo['unknown'];
+        if (gestureEl) {
+            gestureEl.innerHTML = `<span class="g-icon">${info.icon}</span><span class="g-name">${info.name}</span>`;
+            gestureEl.style.borderColor = info.color || 'rgba(255,255,255,0.2)';
+            gestureEl.style.boxShadow = `0 0 30px ${info.color || 'transparent'}33`;
+        }
     }
 
-    // 4. Animation Loop
-    let lastTime = 0;
-    particleSystem.setShape('trail'); // Start with trail mode
+    // === INIT HAND TRACKER ===
+    try {
+        await handTracker.init();
+        const loadingEl = document.getElementById('loading');
+        if (loadingEl) loadingEl.style.display = 'none';
+    } catch (e) {
+        console.error("Hand tracking init failed", e);
+    }
 
+    // === ANIMATION LOOP ===
     let previousGesture = 'none';
     let textShapeIndex = 0;
     const textShapes = ['Xurshidbek', 'SysMasters', 'KUAF'];
     let lastShapeChange = 0;
-    const shapeChangeCooldown = 500; // ms
+    const shapeChangeCooldown = 600;
+    let customTextShown = false;
 
-    function updateGestureUI(gesture) {
-        const info = gestureInfo[gesture] || gestureInfo['unknown'];
-        gestureDisplay.innerHTML = `
-            <div class="gesture-info">
-                <span class="gesture-icon">${info.icon}</span>
-                <div>
-                    <span class="gesture-name">${info.name}</span>
-                    ${info.shape ? `<div class="shape-name">🎨 ${info.shape}</div>` : ''}
-                </div>
-            </div>
-        `;
-
-        // Rang effekti
-        switch (gesture) {
-            case 'pinch': gestureDisplay.style.borderColor = 'rgba(255, 0, 0, 0.5)'; break;
-            case 'fist': gestureDisplay.style.borderColor = 'rgba(255, 85, 0, 0.5)'; break;
-            case 'peace': gestureDisplay.style.borderColor = 'rgba(0, 255, 0, 0.5)'; break;
-            case 'thumbs_up': gestureDisplay.style.borderColor = 'rgba(255, 0, 255, 0.5)'; break;
-            case 'point': gestureDisplay.style.borderColor = 'rgba(255, 255, 0, 0.5)'; break;
-            case 'rock': gestureDisplay.style.borderColor = 'rgba(148, 0, 211, 0.5)'; break;
-            default: gestureDisplay.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-        }
-    }
-
-    function animate(time) {
+    function animate() {
         requestAnimationFrame(animate);
 
-        // FPS calculation
+        // FPS
         frameCount++;
         const now = performance.now();
-        if (now - lastFpsUpdate >= 500) { // Update every 500ms
-            currentFps = Math.round(frameCount * 1000 / (now - lastFpsUpdate));
+        if (now - lastFpsTime >= 500) {
+            const fps = Math.round(frameCount * 1000 / (now - lastFpsTime));
             frameCount = 0;
-            lastFpsUpdate = now;
-
-            fpsDisplay.textContent = `FPS: ${currentFps}`;
-            fpsDisplay.className = currentFps >= 50 ? '' : (currentFps >= 30 ? 'warning' : 'critical');
+            lastFpsTime = now;
+            if (fpsEl) {
+                fpsEl.textContent = fps;
+                fpsEl.style.color = fps >= 50 ? '#0f0' : fps >= 30 ? '#ff0' : '#f00';
+            }
         }
 
-        const delta = time - lastTime;
-        lastTime = time;
-
-        // Detect hand
+        // Detect
         handTracker.detect();
         const gesture = handTracker.getGesture();
         const currentGesture = gesture.type;
         const nowMs = Date.now();
 
-        // Gesture o'zgarganini tekshirish
+        // Gesture o'zgardi
         if (currentGesture !== previousGesture && nowMs - lastShapeChange > shapeChangeCooldown) {
             updateGestureUI(currentGesture);
 
-            // Gestga qarab shakl o'zgartirish
             switch (currentGesture) {
-                case 'pinch':
-                    // Matn shakllari o'rtasida aylanish
+                case 'peace': {
+                    // ✌️ Peace = custom text input matnini ko'rsatish!
+                    const inputText = inputField.value.trim();
+                    if (inputText) {
+                        particleSystem.setCustomText(inputText);
+                        particleSystem.showCustomText();
+                        customTextShown = true;
+                        inputHint.textContent = `✨ "${inputText}" ko'rsatilmoqda!`;
+                        inputHint.style.color = '#00ff88';
+                    } else {
+                        // Inputda matn yo'q - default peace shakli
+                        particleSystem.setShape('peace');
+                        customTextShown = false;
+                    }
+                    break;
+                }
+                case 'pinch': {
                     const textShape = textShapes[textShapeIndex];
                     particleSystem.setShape(textShape);
-                    gestureInfo['pinch'].shape = textShape;
-                    updateGestureUI('pinch');
                     textShapeIndex = (textShapeIndex + 1) % textShapes.length;
+                    customTextShown = false;
                     break;
-
+                }
                 case 'fist':
                     particleSystem.setShape('firework');
                     particleSystem.triggerExplosion();
+                    customTextShown = false;
                     break;
-
-                case 'peace':
-                    particleSystem.setShape('peace');
-                    break;
-
                 case 'thumbs_up':
                     particleSystem.setShape('heart');
+                    customTextShown = false;
                     break;
-
                 case 'point':
                     particleSystem.setShape('star');
+                    customTextShown = false;
                     break;
-
                 case 'rock':
                     particleSystem.setShape('galaxy');
+                    customTextShown = false;
                     break;
-
                 case 'three':
                     particleSystem.setShape('spiral');
+                    customTextShown = false;
                     break;
-
                 case 'four':
                     particleSystem.setShape('butterfly');
+                    customTextShown = false;
                     break;
-
                 case 'open':
-                    particleSystem.setShape('trail');
-                    break;
-
                 case 'none':
                     particleSystem.setShape('trail');
+                    customTextShown = false;
                     break;
             }
 
@@ -272,13 +194,11 @@ async function main() {
             lastShapeChange = nowMs;
         }
 
-        // Update particles
         particleSystem.update(gesture);
-
         renderer.render(scene, camera);
     }
 
-    animate(0);
+    animate();
 }
 
 main();
